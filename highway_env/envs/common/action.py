@@ -248,6 +248,62 @@ class MultiAgentAction(ActionType):
         for agent_action, action_type in zip(action, self.agents_action_types):
             action_type.act(agent_action)
 
+#TODO: Add documentation here
+class MultiAgentActionContinous(ActionType):
+    """
+    An continuous action space for multi-agent configs just for longitudinal """
+
+    ACCELERATION_RANGE = (-5, 5.0)
+    """Acceleration range: [-x, x], in m/s²."""
+
+    STEERING_RANGE = (-np.pi / 4, np.pi / 4)
+    """Steering angle range: [-x, x], in rad."""
+
+    def __init__(self,
+                 env: 'AbstractEnv',
+                 action_config: dict,
+                 acceleration_range: Optional[Tuple[float, float]] = None,
+                 steering_range: Optional[Tuple[float, float]] = None,
+                 longitudinal: bool = True,
+                 dynamical: bool = False,
+                 clip: bool = True,
+                 **kwargs) -> None:
+        super().__init__(env)
+        self.acceleration_range = acceleration_range if acceleration_range else self.ACCELERATION_RANGE
+        self.steering_range = steering_range if steering_range else self.STEERING_RANGE
+        self.lateral = False
+        self.longitudinal = longitudinal
+        if not self.lateral and not self.longitudinal:
+            raise ValueError("Either longitudinal and/or lateral control must be enabled")
+        self.dynamical = dynamical
+        self.clip = clip
+        self.size = 2 if self.lateral and self.longitudinal else 1
+        self.last_action = np.zeros(self.size)
+        self.action_config = action_config
+        self.agents_action_types = []
+        for vehicle in self.env.controlled_vehicles:
+            action_type = action_factory(self.env, self.action_config)
+            action_type.controlled_vehicle = vehicle
+            self.agents_action_types.append(action_type)
+
+    def space(self) -> spaces.Space:
+        return spaces.Tuple([action_type.space() for action_type in self.agents_action_types])
+
+    @property
+    def vehicle_class(self) -> Callable:
+        return action_factory(self.env, self.action_config).vehicle_class
+
+    def act(self, action: Action) -> None:
+        """Iterate loop over vehicles and update their state"""
+        assert isinstance(action, tuple)
+        for agent_action, action_type in zip(action, self.agents_action_types):
+            action_type.act(self.saturate(agent_action))
+
+    def saturate(self, action: np.ndarray) -> None:
+        """Saturate longitudinal action with limits pre-defined"""
+        if self.clip:
+            action = np.clip(action, -1, 1)
+        return utils.lmap(action[0], [-1, 1], self.acceleration_range)
 
 def action_factory(env: 'AbstractEnv', config: dict) -> ActionType:
     if config["type"] == "ContinuousAction":
@@ -258,5 +314,8 @@ def action_factory(env: 'AbstractEnv', config: dict) -> ActionType:
         return DiscreteMetaAction(env, **config)
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
+    elif config["type"] == "MultiAgentActionContinous":
+        return MultiAgentAction(env, **config)
     else:
         raise ValueError("Unknown action type")
+
