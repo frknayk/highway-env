@@ -1,22 +1,27 @@
 import numpy as np
 from gym.envs.registration import register
+
+from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
-from highway_env.road.road import Road, RoadNetwork
 from highway_env.road.lane import LineType, StraightLane
 from highway_env.road.road import Road, RoadNetwork
+from highway_env.vehicle.controller import MDPVehicle
 
 class AccTwoLanesEnv(AbstractEnv):
-    """
-    A highway driving environment.
 
-    The vehicle is driving on a straight highway with several lanes, and is rewarded for reaching a high speed,
-    staying on the rightmost lanes and avoiding collisions.
+    """
+    Adaptive stress testing environment for 
     """
 
     @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update({
+            # "observation": {
+            #     "type": "Kinematics",
+            #     "normalize": False,
+            #     "absolute": True
+            # },
             "observation": {
                 "type": "MultiAgentObservation",
                 "observation_config": {
@@ -33,12 +38,13 @@ class AccTwoLanesEnv(AbstractEnv):
                      "longitudinal": True
                  }
             },
+            # "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
             "lanes_count": 2,
             "vehicles_count": 0,
             "controlled_vehicles": 2,
             "duration": 4000,  # [s]
             "ego_spacing": 2,
-            "road_length" : 10000,
+            "road_length" : 1000,
             "show_trajectories": True,
             "lane_init_id_ego": 0,
             "lane_init_id_agent": 0,
@@ -50,6 +56,7 @@ class AccTwoLanesEnv(AbstractEnv):
     def _reset(self) -> None:
         self._create_road()
         self._create_vehicles()
+
 
     def _create_vehicles(self) -> None:
         """Create some new random vehicles of a given type, and add them on the road."""
@@ -77,7 +84,6 @@ class AccTwoLanesEnv(AbstractEnv):
                                                      lane_ego.position(self.config['pos_init_ego'], 0),
                                                      speed=0)
         self.road.vehicles.append(ego_vehicle)
-        self.controlled_vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
     def _create_agent_vehicles(self) -> None:
@@ -87,9 +93,6 @@ class AccTwoLanesEnv(AbstractEnv):
                                                      position=lane_agent.position(self.config['pos_init_agent'], 0),
                                                      heading=lane_agent.heading_at(0),
                                                      speed=0)
-        # The below line is essential, unless this line only first appneded vehicles
-        # will be treated as controlled vehicle
-        self.controlled_vehicles.append(vehicle_agent)
         self.road.vehicles.append(vehicle_agent)
 
     def _reward(self, action: int) -> float:
@@ -111,9 +114,10 @@ class AccTwoLanesEnv(AbstractEnv):
         return is_terminal
 
     def _cost(self, action: int) -> float:
-        """The cost signal is the occurrence of collision."""
+        """
+        The cost signal is the occurrence of collision.
+        """
         return float(self.vehicle.crashed)
-
 
 
 register(
